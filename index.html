@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ELD78x78Minimal BLE Debug</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08111f;
+        --panel: #0f1b2e;
+        --panel-2: #13243d;
+        --line: #284462;
+        --text: #e7efff;
+        --muted: #8ea3c2;
+        --accent: #7dd3fc;
+        --accent-2: #34d399;
+        --danger: #fb7185;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "SF Mono", "JetBrains Mono", "IBM Plex Mono", monospace;
+        background:
+          radial-gradient(circle at top left, rgba(125, 211, 252, 0.12), transparent 28%),
+          radial-gradient(circle at top right, rgba(52, 211, 153, 0.1), transparent 24%),
+          linear-gradient(180deg, #07101d 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      main {
+        width: min(1400px, calc(100vw - 32px));
+        margin: 24px auto 48px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      .hero {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 20px;
+      }
+
+      .hero p {
+        color: var(--muted);
+        margin-top: 8px;
+        max-width: 760px;
+        line-height: 1.45;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(15, 27, 46, 0.85);
+        color: var(--muted);
+      }
+
+      .status-pill[data-state="connected"] {
+        color: #c8facc;
+        border-color: rgba(52, 211, 153, 0.45);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      .card {
+        background: linear-gradient(180deg, rgba(19, 36, 61, 0.94), rgba(10, 20, 34, 0.94));
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .card h2 {
+        font-size: 16px;
+        margin-bottom: 10px;
+      }
+
+      .card p {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        color: var(--text);
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      button.primary {
+        background: linear-gradient(180deg, rgba(18, 73, 108, 0.95), rgba(14, 57, 86, 0.95));
+        border-color: rgba(125, 211, 252, 0.5);
+      }
+
+      button.secondary {
+        background: linear-gradient(180deg, rgba(18, 84, 66, 0.95), rgba(12, 63, 50, 0.95));
+        border-color: rgba(52, 211, 153, 0.45);
+      }
+
+      button.danger {
+        background: linear-gradient(180deg, rgba(113, 35, 55, 0.95), rgba(76, 24, 39, 0.95));
+        border-color: rgba(251, 113, 133, 0.35);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field-inline {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+      }
+
+      .field label {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      input[type="number"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(6, 15, 27, 0.82);
+        color: var(--text);
+      }
+
+      .log {
+        min-height: 180px;
+        max-height: 320px;
+        overflow: auto;
+        white-space: pre-wrap;
+        background: rgba(4, 12, 21, 0.82);
+        border: 1px solid rgba(40, 68, 98, 0.8);
+        border-radius: 14px;
+        padding: 12px;
+        color: #bfe4ff;
+        line-height: 1.5;
+      }
+
+      .row-toolbar {
+        display: grid;
+        gap: 12px;
+      }
+
+      .row-controls {
+        display: grid;
+        grid-template-columns: 180px auto;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .row-strip-scroller {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+
+      .row-strip {
+        display: grid;
+        grid-template-columns: repeat(78, 12px);
+        gap: 2px;
+        width: max-content;
+        min-width: 100%;
+        background: rgba(4, 12, 21, 0.72);
+        border: 1px solid rgba(40, 68, 98, 0.8);
+        border-radius: 14px;
+        padding: 10px;
+      }
+
+      .pixel {
+        width: 12px;
+        aspect-ratio: 1 / 1;
+        border: none;
+        border-radius: 3px;
+        padding: 0;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .pixel-debug-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .pixel-preview {
+        min-height: 44px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 14px;
+      }
+
+      .canvas-container {
+        position: relative;
+        background: #000;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        width: 100%;
+        max-width: 600px;
+        aspect-ratio: 1 / 1;
+        overflow: hidden;
+        cursor: crosshair;
+      }
+
+      canvas {
+        image-rendering: pixelated;
+        width: 100%;
+        height: 100%;
+      }
+
+      .canvas-info {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        color: var(--muted);
+        pointer-events: none;
+      }
+
+      @media (max-width: 1080px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .row-controls {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div>
+          <h1>ELD78x78 BLE Debugger</h1>
+          <p>
+            Connect to your ESP32-S3 SuperMINI LED Panel. Precise testing for 78x78 ICN2053 26S matrices.
+          </p>
+        </div>
+        <div id="connection-status" class="status-pill" data-state="idle">Disconnected</div>
+      </section>
+
+      <section class="grid">
+        <div class="stack">
+          <article class="card">
+            <h2>Connection</h2>
+            <div class="controls">
+              <button id="connect-btn" class="primary">Connect BLE</button>
+              <button id="disconnect-btn" class="danger" disabled>Disconnect</button>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Panel Controls</h2>
+            <div class="stack">
+              <div class="controls">
+                <button id="ping-btn" class="secondary" disabled>PING</button>
+                <button id="clear-btn" disabled>CLEAR</button>
+              </div>
+              <div class="field">
+                <label for="brightness-input">Draw Brightness (0-4)</label>
+                <div class="controls">
+                  <input id="brightness-input" type="number" min="0" max="4" step="1" value="4" />
+                  <button id="brightness-btn" disabled>Set</button>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Test Patterns</h2>
+            <div class="controls">
+              <button id="test-rgb-btn" disabled>RGB Bars</button>
+              <button id="test-grayscale-btn" disabled>Grayscale</button>
+              <button id="test-border-btn" disabled>Border</button>
+              <button id="test-alignment-btn" disabled>Alignment (26S)</button>
+              <button id="test-full-white-btn" disabled>Full White</button>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Log</h2>
+            <div class="stack">
+              <div id="log" class="log"></div>
+              <button id="clear-log-btn">Clear Log</button>
+            </div>
+          </article>
+        </div>
+
+        <div class="stack">
+          <article class="card">
+            <h2>Pixel Editor (78x78)</h2>
+            <div class="stack">
+              <div class="canvas-container">
+                <canvas id="pixel-canvas" width="78" height="78"></canvas>
+                <div class="canvas-info" id="canvas-info">X: 0, Y: 0</div>
+              </div>
+              <div class="pixel-debug-grid">
+                <div class="field">
+                  <label for="pixel-x-input">X Coordinate (0-77)</label>
+                  <input id="pixel-x-input" type="number" min="0" max="77" step="1" value="0" />
+                </div>
+                <div class="field">
+                  <label for="pixel-y-input">Y Coordinate (0-77)</label>
+                  <input id="pixel-y-input" type="number" min="0" max="77" step="1" value="0" />
+                </div>
+              </div>
+              <div class="field">
+                <label>Color Palette</label>
+                <div id="legend" class="legend"></div>
+              </div>
+              <div id="pixel-preview" class="pixel-preview">2: Red</div>
+              <div class="controls">
+                <button id="send-pixel-btn" class="secondary" disabled>Send Pixel</button>
+                <button id="fill-canvas-btn" disabled>Fill Current Color</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Row Buffer Editor</h2>
+            <div class="stack">
+              <div class="row-controls">
+                <div class="field">
+                  <label for="row-index-input">Row Index (0-77)</label>
+                  <input id="row-index-input" type="number" min="0" max="77" step="1" value="0" />
+                </div>
+                <button id="send-row-btn" class="secondary" disabled>Send Row Buffer</button>
+              </div>
+              <div class="row-strip-scroller">
+                <div id="row-strip" class="row-strip" aria-label="78 pixel row editor"></div>
+              </div>
+              <div class="presets" id="presets">
+                <button class="preset-btn" data-preset="blank">Blank</button>
+                <button class="preset-btn" data-preset="white">White</button>
+                <button class="preset-btn" data-preset="red">Red</button>
+                <button class="preset-btn" data-preset="green">Green</button>
+                <button class="preset-btn" data-preset="blue">Blue</button>
+                <button class="preset-btn" data-preset="checker">Checker</button>
+                <button class="preset-btn" data-preset="gradient">Gradient</button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
