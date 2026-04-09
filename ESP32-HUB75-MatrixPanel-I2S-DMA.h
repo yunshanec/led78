@@ -810,6 +810,11 @@ private:
   void fm6124init(const HUB75_I2S_CFG &_cfg);
 
   /**
+   * @brief - ICN2053-family chips initialization routine
+   */
+  void icn2053init(const HUB75_I2S_CFG& _cfg);
+
+  /**
    * @brief - DP3246-family chips initialization routine
    */
   void dp3246init(const HUB75_I2S_CFG& _cfg);

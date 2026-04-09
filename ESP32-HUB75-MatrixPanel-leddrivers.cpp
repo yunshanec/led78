@@ -26,7 +26,7 @@ void MatrixPanel_I2S_DMA::shiftDriver(const HUB75_I2S_CFG& _cfg){
     case HUB75_I2S_CFG::ICN2038S:
     case HUB75_I2S_CFG::FM6124:
     case HUB75_I2S_CFG::FM6126A:
-        fm6124init(_cfg);
+        icn2053init(_cfg);
         break;
     case HUB75_I2S_CFG::DP3246:
         dp3246init(_cfg);
@@ -44,6 +44,53 @@ void MatrixPanel_I2S_DMA::shiftDriver(const HUB75_I2S_CFG& _cfg){
     }
 }
 
+
+void MatrixPanel_I2S_DMA::icn2053init(const HUB75_I2S_CFG& _cfg) {
+    ESP_LOGI("LEDdrivers", "MatrixPanel_I2S_DMA - initializing ICN2053 driver...");
+
+    // ICN2053 configuration registers (16-bit each)
+    // These are standard values for 26S panels
+    bool REG1[16] = {0,0,0,0,0, 1,1,1,1,1,1, 0,0,0,0,0}; // Brightness/Current
+    bool REG2[16] = {0,1,0,0,0, 0,0,0,0,1,0, 0,0,0,0,0}; // Output Enable & Ghost Cancellation
+
+    for (uint8_t _pin:{_cfg.gpio.r1, _cfg.gpio.r2, _cfg.gpio.g1, _cfg.gpio.g2, _cfg.gpio.b1, _cfg.gpio.b2, _cfg.gpio.clk, _cfg.gpio.lat, _cfg.gpio.oe}){
+        gpio_reset_pin((gpio_num_t)_pin);
+        gpio_set_direction((gpio_num_t) _pin, GPIO_MODE_OUTPUT);
+        gpio_set_level((gpio_num_t) _pin, LOW);
+    }
+
+    gpio_set_level((gpio_num_t) _cfg.gpio.oe, HIGH); // Disable Display
+
+    // Write REG1 (11 clocks Latch)
+    for (int l = 0; l < PIXELS_PER_ROW; l++){
+        for (uint8_t _pin:{_cfg.gpio.r1, _cfg.gpio.r2, _cfg.gpio.g1, _cfg.gpio.g2, _cfg.gpio.b1, _cfg.gpio.b2})
+          gpio_set_level((gpio_num_t) _pin, REG1[l%16]);
+        if (l > PIXELS_PER_ROW - 12) gpio_set_level((gpio_num_t) _cfg.gpio.lat, HIGH);
+        CLK_PULSE
+    }
+    gpio_set_level((gpio_num_t) _cfg.gpio.lat, LOW);
+
+    // Write REG2 (12 clocks Latch)
+    for (int l = 0; l < PIXELS_PER_ROW; l++){
+        for (uint8_t _pin:{_cfg.gpio.r1, _cfg.gpio.r2, _cfg.gpio.g1, _cfg.gpio.g2, _cfg.gpio.b1, _cfg.gpio.b2})
+          gpio_set_level((gpio_num_t) _pin, REG2[l%16]);
+        if (l > PIXELS_PER_ROW - 13) gpio_set_level((gpio_num_t) _cfg.gpio.lat, HIGH);
+        CLK_PULSE
+    }
+    gpio_set_level((gpio_num_t) _cfg.gpio.lat, LOW);
+
+    // Finalize
+    for (uint8_t _pin:{_cfg.gpio.r1, _cfg.gpio.r2, _cfg.gpio.g1, _cfg.gpio.g2, _cfg.gpio.b1, _cfg.gpio.b2})
+       gpio_set_level((gpio_num_t) _pin, LOW);
+
+    for (int l = 0; l < PIXELS_PER_ROW; ++l) CLK_PULSE
+    
+    gpio_set_level((gpio_num_t) _cfg.gpio.lat, HIGH);
+    CLK_PULSE
+    gpio_set_level((gpio_num_t) _cfg.gpio.lat, LOW);
+    gpio_set_level((gpio_num_t) _cfg.gpio.oe, LOW); // Enable Display
+    CLK_PULSE
+}
 
 void MatrixPanel_I2S_DMA::fm6124init(const HUB75_I2S_CFG& _cfg) {
 

@@ -26,17 +26,16 @@
 #define PANEL_RES_Y 78
 #define PANEL_CHAIN 1
 
+// 78x78 26S panels are logically 117x52
+#define LOGICAL_WIDTH  117
+#define LOGICAL_HEIGHT 52
+
+// Segment swap: Physical chain is Seg1 -> Seg3 -> Seg2
+#define ENABLE_SEGMENT_SWAP true
+
 // ICN2053 26S panel Y-offset compensation
-// Middle 26 columns (x: 26-51) are offset by 2 rows compared to the sides
 #define PANEL_Y_OFFSET_COMPENSATION_ENABLED true
 #define PANEL_Y_OFFSET_COMPENSATION_VALUE 2
-#define PANEL_SEGMENT_WIDTH 26
-
-// Segment swap and zigzag configuration for 78x78 26S panels
-// If middle segment shows blue instead of green, segments 2 and 3 are likely swapped in the chain
-#define ENABLE_SEGMENT_SWAP true
-// If middle segment is split or mirrored at 13 pixels, it may have a zigzag mapping
-#define ENABLE_SEGMENT_ZIGZAG true
 
 static const size_t SERIAL_LINE_BUFFER_SIZE = 160;
 static const uint8_t BINARY_SYNC_1 = 0xAA;
@@ -45,8 +44,8 @@ static const uint8_t BINARY_FRAME_TYPE_MASK = 0x01;
 static const uint8_t BINARY_FRAME_TYPE_RGB332_ROW = 0x02;
 static const uint8_t BINARY_FRAME_TYPE_RGB332_FULL = 0x03;
 static const uint8_t BRIGHTNESS_MAX_LEVEL = 4;
-static const uint16_t MASK_SEGMENTS_PER_ROW = (PANEL_RES_X + 31) / 32;
-static const uint16_t BINARY_PAYLOAD_SIZE_MASK = MASK_SEGMENTS_PER_ROW * 4 * PANEL_RES_Y;
+static const uint16_t MASK_SEGMENTS_PER_ROW = (LOGICAL_WIDTH + 31) / 32;
+static const uint16_t BINARY_PAYLOAD_SIZE_MASK = ((PANEL_RES_X + 31) / 32) * 4 * PANEL_RES_Y;
 static const uint16_t BINARY_PAYLOAD_SIZE_RGB332_ROW = PANEL_RES_X + 1;
 static const uint16_t BINARY_PAYLOAD_SIZE_RGB332_FULL = PANEL_RES_X * PANEL_RES_Y;
 static const uint16_t BINARY_PAYLOAD_SIZE_MAX = BINARY_PAYLOAD_SIZE_RGB332_FULL;
@@ -69,8 +68,8 @@ MatrixPanel_I2S_DMA *dma_display = nullptr;
 BLECharacteristic *bleTxCharacteristic = nullptr;
 
 HUB75_I2S_CFG mxconfig(
-  PANEL_RES_X,
-  PANEL_RES_Y,
+  LOGICAL_WIDTH,
+  LOGICAL_HEIGHT,
   PANEL_CHAIN
 );
 
@@ -112,7 +111,7 @@ static uint8_t drawBrightness = BRIGHTNESS_MAX_LEVEL;
 static uint8_t colorR333 = 7;
 static uint8_t colorG333 = 7;
 static uint8_t colorB333 = 7;
-static uint32_t frameMask[PANEL_RES_Y][MASK_SEGMENTS_PER_ROW];
+static uint32_t frameMask[LOGICAL_HEIGHT][MASK_SEGMENTS_PER_ROW];
 
 bool mapPoint(int x, int y, int &mappedX, int &mappedY);
 void resetFrameBuffer();
@@ -159,69 +158,63 @@ void applyColor333(uint8_t r, uint8_t g, uint8_t b) {
   updateDrawColor();
 }
 
-// Get Y offset compensation for a given X coordinate
-// For ICN2053 26S panels: middle segment (x: 26-51) displays 2 rows higher
-// This compensation shifts the middle segment down to align with the sides
-int getYOffsetCompensation(int x) {
-#if PANEL_Y_OFFSET_COMPENSATION_ENABLED
-  // Determine which segment the X coordinate falls into
-  // Panel is divided into 3 segments of 26 columns each
-  // Middle segment (segment 1) needs compensation
-  int segment = x / PANEL_SEGMENT_WIDTH;
-  if (segment == 1) {  // Middle segment (x: 26-51)
-    return PANEL_Y_OFFSET_COMPENSATION_VALUE;  // Shift down to align with sides
-  }
-#endif
-  return 0;
-}
-
 bool mapPoint(int x, int y, int &mappedX, int &mappedY) {
   if (x < 0 || x >= PANEL_RES_X || y < 0 || y >= PANEL_RES_Y) {
     return false;
   }
 
-  int lx = x;
-  int ly = y;
+  int lx = 0;
+  int ly = 0;
 
-  // 1. 段序交换 (Segment Swap)
-  // 逻辑顺序: Seg1(0-25), Seg2(26-51), Seg3(52-77)
-  // 物理顺序: Seg1 -> Seg3 -> Seg2
-  // 如果中间(26-51)显示了蓝(52-77的数据)，则执行以下交换
-  if (ENABLE_SEGMENT_SWAP) {
-    if (x >= 26 && x < 52) { 
-      lx = x + 26; // 逻辑绿(26-51) -> 映射到物理末尾
-    } else if (x >= 52) {
-      lx = x - 26; // 逻辑蓝(52-77) -> 映射到物理中间
-    }
+  // Segment index: Seg1(0), Seg2(1), Seg3(2)
+  int segIdx = x / 26;
+  int relX = x % 26;
+
+  // 1/26 Scan mapping for 78x78 panel:
+  // LOGICAL_WIDTH = 117 (78 * 1.5)
+  // LOGICAL_HEIGHT = 52 (26 scan lines * 2 groups R1/R2)
+
+  // Apply segment-specific vertical shift
+  // Many 26S panels have a 13-row shift for Seg2
+  int dy = y;
+  if (segIdx == 1) { // Middle segment
+    dy = (y + 13) % 78; // Try 13-row cyclic shift to fix row 38 issue
   }
 
-  // 2. 13像素块内映射 (13-pixel Block Mapping)
-  // 解决您提到的“13列蓝色”分裂问题
-  // 某些26S面板在每个26列段内，0-12和13-25是对调的，或者有位移
-  if (ENABLE_SEGMENT_ZIGZAG) {
-    int segBase = (lx / 26) * 26;
-    int relX = lx % 26;
-    if (relX < 13) {
-      lx = segBase + relX + 13; // 左13移到右
-    } else {
-      lx = segBase + relX - 13; // 右13移到左
-    }
+  if (dy < 26) {
+    // Top 26 rows -> R1 (ly 0-25)
+    lx = x;
+    ly = dy;
+  } else if (dy < 52) {
+    // Middle 26 rows -> R2 (ly 26-51)
+    lx = x;
+    ly = dy - 26;
+  } else {
+    // Bottom 26 rows (52-77) -> Folded into columns 78-116
+    lx = 78 + (segIdx * 13) + (relX % 13);
+    ly = (relX < 13) ? (dy - 52) : (dy - 52 + 26);
+  }
+
+  // Segment Swap for 1-3-2 physical chain:
+  if (ENABLE_SEGMENT_SWAP) {
+    if (lx >= 26 && lx < 52) { lx += 26; }
+    else if (lx >= 52 && lx < 78) { lx -= 26; }
+    else if (lx >= 91 && lx < 104) { lx += 13; }
+    else if (lx >= 104) { lx -= 13; }
   }
 
   mappedX = lx;
   mappedY = ly;
 
-  // 3. 行偏置补偿 (Y-Offset Compensation)
-  // 注意：这里的补偿应该基于物理位置。如果中间段物理上是Seg3，则需调整判断条件
-  // 我们暂时保持对逻辑中间位置的补偿，如果对齐不对再微调
+  // Final alignment check for Seg2:
+  // If Seg2 shows blue, it's swapped. If it's shifted by 2 rows, apply it here.
   if (PANEL_Y_OFFSET_COMPENSATION_ENABLED) {
     if (x >= 26 && x < 52) { 
       mappedY += PANEL_Y_OFFSET_COMPENSATION_VALUE;
     }
   }
 
-  // Check bounds after compensation
-  if (mappedY < 0 || mappedY >= PANEL_RES_Y) {
+  if (mappedX < 0 || mappedX >= LOGICAL_WIDTH || mappedY < 0 || mappedY >= LOGICAL_HEIGHT) {
     return false;
   }
 
@@ -232,14 +225,14 @@ bool mapPoint(int x, int y, int &mappedX, int &mappedY) {
   }
 
   if (MAP_FLIP_X) {
-    mappedX = (PANEL_RES_X - 1) - mappedX;
+    mappedX = (LOGICAL_WIDTH - 1) - mappedX;
   }
 
   if (MAP_FLIP_Y) {
-    mappedY = (PANEL_RES_Y - 1) - mappedY;
+    mappedY = (LOGICAL_HEIGHT - 1) - mappedY;
   }
 
-  return mappedX >= 0 && mappedX < PANEL_RES_X && mappedY >= 0 && mappedY < PANEL_RES_Y;
+  return true;
 }
 
 void drawSinglePoint(int x, int y) {
@@ -265,7 +258,7 @@ void drawSinglePointColor333Aligned(int x, int y, uint8_t r, uint8_t g, uint8_t 
 }
 
 void resetFrameBuffer() {
-  for (uint8_t row = 0; row < PANEL_RES_Y; ++row) {
+  for (uint8_t row = 0; row < LOGICAL_HEIGHT; ++row) {
     for (uint16_t seg = 0; seg < MASK_SEGMENTS_PER_ROW; ++seg) {
       frameMask[row][seg] = 0;
     }
@@ -291,9 +284,10 @@ void drawRowMask(uint8_t y, uint32_t *maskSegments) {
     const uint32_t segment = maskSegments[seg];
     for (uint8_t bit = 0; bit < 32; ++bit) {
       if ((segment & (1UL << bit)) != 0) {
-        const uint16_t x = seg * 32 + bit;
-        if (x < PANEL_RES_X) {
-          drawSinglePoint(x, y);
+        const uint16_t lx = seg * 32 + bit;
+        if (lx < LOGICAL_WIDTH) {
+          // In mask mode, we directly update the DMA buffer using logical coordinates
+          dma_display->drawPixel((uint8_t)lx, (uint8_t)y, drawColor);
         }
       }
     }
@@ -302,7 +296,7 @@ void drawRowMask(uint8_t y, uint32_t *maskSegments) {
 
 void renderFrameBuffer() {
   clearScreen();
-  for (uint8_t row = 0; row < PANEL_RES_Y; ++row) {
+  for (uint8_t row = 0; row < LOGICAL_HEIGHT; ++row) {
     bool hasData = false;
     for (uint16_t seg = 0; seg < MASK_SEGMENTS_PER_ROW; ++seg) {
       if (frameMask[row][seg] != 0) {
@@ -699,7 +693,7 @@ void setupMatrix() {
   mxconfig.gpio.lat = LAT_PIN;
   mxconfig.gpio.oe  = OE_PIN;
   mxconfig.gpio.clk = CLK_PIN;
-  mxconfig.driver   = HUB75_I2S_CFG::FM6126A;
+  mxconfig.driver   = HUB75_I2S_CFG::ICN2038S; // Will trigger icn2053init
   mxconfig.line_decoder = HUB75_I2S_CFG::SM5368;
 
   mxconfig.i2sspeed = MATRIX_I2S_SPEED;
