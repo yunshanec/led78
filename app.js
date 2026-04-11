@@ -25,6 +25,7 @@ const state = {
   row: Array.from({ length: PANEL_WIDTH }, () => 0),
   pixelColorIndex: 2,
   canvasData: Array.from({ length: PANEL_WIDTH * PANEL_WIDTH }, () => 0), // color indexes
+  isSending: false,
 };
 
 const els = {
@@ -132,17 +133,28 @@ function setCanvasPixel(x, y, colorIndex, send = false) {
 }
 
 async function sendFullCanvas() {
-  logLine('Sending full canvas...');
-  for (let y = 0; y < PANEL_WIDTH; y++) {
-    const rowPixels = [];
-    for (let x = 0; x < PANEL_WIDTH; x++) {
-      rowPixels.push(palette[state.canvasData[y * PANEL_WIDTH + x]].rgb);
-    }
-    const frame = buildRgb332RowFrame(y, rowPixels);
-    await writeBinaryFrame(frame, `ROW ${y}`);
-    await new Promise((r) => setTimeout(r, 10)); // Slow down for BLE stability
+  if (state.isSending) {
+    logLine('Already sending, please wait...');
+    return;
   }
-  logLine('Full canvas sent');
+  state.isSending = true;
+  logLine('Sending full canvas...');
+  try {
+    for (let y = 0; y < PANEL_WIDTH; y++) {
+      const rowPixels = [];
+      for (let x = 0; x < PANEL_WIDTH; x++) {
+        rowPixels.push(palette[state.canvasData[y * PANEL_WIDTH + x]].rgb);
+      }
+      const frame = buildRgb332RowFrame(y, rowPixels);
+      await writeBinaryFrame(frame, `ROW ${y}`);
+      await new Promise((r) => setTimeout(r, 15)); // Slow down for BLE stability
+    }
+    logLine('Full canvas sent');
+  } catch (e) {
+    logLine(`ERR sending canvas: ${e.message}`);
+  } finally {
+    state.isSending = false;
+  }
 }
 
 function renderRow() {

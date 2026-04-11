@@ -60,7 +60,7 @@ static const char *BLE_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 static const char *BLE_RX_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
 static const char *BLE_TX_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 static const size_t BLE_TX_MAX_NOTIFY_BYTES = 20;
-static const bool MAP_SWAP_XY = true;
+static const bool MAP_SWAP_XY = false;
 static const bool MAP_FLIP_X = false;
 static const bool MAP_FLIP_Y = false;
 
@@ -188,7 +188,7 @@ bool mapPoint(int x, int y, int &mappedX, int &mappedY) {
   } else if (dy < 52) {
     // Middle 26 rows -> R2 (ly 26-51)
     lx = x;
-    ly = dy - 26;
+    ly = dy;
   } else {
     // Bottom 26 rows (52-77) -> Folded into columns 78-116
     lx = 78 + (segIdx * 13) + (relX % 13);
@@ -368,11 +368,6 @@ void applyBinaryRgb332RowFrame(const uint8_t *payload, uint16_t len) {
   const uint8_t row = payload[0];
   if (row >= PANEL_RES_Y) {
     return;
-  }
-
-  if (row == 0) {
-    resetFrameBuffer();
-    clearScreen();
   }
 
   for (uint8_t x = 0; x < PANEL_RES_X; ++x) {
