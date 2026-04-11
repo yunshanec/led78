@@ -31,10 +31,10 @@
 #define LOGICAL_HEIGHT 52
 
 // Segment swap: Physical chain is Seg1 -> Seg3 -> Seg2
-#define ENABLE_SEGMENT_SWAP true
+#define ENABLE_SEGMENT_SWAP false
 
 // ICN2053 26S panel Y-offset compensation
-#define PANEL_Y_OFFSET_COMPENSATION_ENABLED true
+#define PANEL_Y_OFFSET_COMPENSATION_ENABLED false
 #define PANEL_Y_OFFSET_COMPENSATION_VALUE 2
 
 static const size_t SERIAL_LINE_BUFFER_SIZE = 160;
@@ -49,7 +49,7 @@ static const uint16_t BINARY_PAYLOAD_SIZE_MASK = ((PANEL_RES_X + 31) / 32) * 4 *
 static const uint16_t BINARY_PAYLOAD_SIZE_RGB332_ROW = PANEL_RES_X + 1;
 static const uint16_t BINARY_PAYLOAD_SIZE_RGB332_FULL = PANEL_RES_X * PANEL_RES_Y;
 static const uint16_t BINARY_PAYLOAD_SIZE_MAX = BINARY_PAYLOAD_SIZE_RGB332_FULL;
-static const HUB75_I2S_CFG::clk_speed MATRIX_I2S_SPEED = HUB75_I2S_CFG::HZ_16M;
+static const HUB75_I2S_CFG::clk_speed MATRIX_I2S_SPEED = HUB75_I2S_CFG::HZ_8M;
 static const bool MATRIX_CLKPHASE = true;
 static const uint8_t MATRIX_LAT_BLANKING = 1;
 static const uint8_t MATRIX_MIN_REFRESH_RATE = 180;
@@ -175,11 +175,7 @@ bool mapPoint(int x, int y, int &mappedX, int &mappedY) {
   // LOGICAL_HEIGHT = 52 (26 scan lines * 2 groups R1/R2)
 
   // Apply segment-specific vertical shift
-  // Many 26S panels have a 13-row shift for Seg2
   int dy = y;
-  if (segIdx == 1) { // Middle segment
-    dy = (y + 13) % 78; // Try 13-row cyclic shift to fix row 38 issue
-  }
 
   if (dy < 26) {
     // Top 26 rows -> R1 (ly 0-25)
@@ -191,8 +187,14 @@ bool mapPoint(int x, int y, int &mappedX, int &mappedY) {
     ly = dy;
   } else {
     // Bottom 26 rows (52-77) -> Folded into columns 78-116
-    lx = 78 + (segIdx * 13) + (relX % 13);
-    ly = (relX < 13) ? (dy - 52) : (dy - 52 + 26);
+    // Split the 78 columns of the bottom 26 rows into two 39x26 blocks
+    if (x < 39) {
+      lx = 78 + x;
+      ly = dy - 52; // Logical rows 0-25
+    } else {
+      lx = 78 + (x - 39);
+      ly = (dy - 52) + 26; // Logical rows 26-51
+    }
   }
 
   // Segment Swap for 1-3-2 physical chain:
