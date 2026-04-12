@@ -7,12 +7,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define R1_PIN 1
+#define R1_PIN 3
 #define G1_PIN 2
-#define B1_PIN 3
-#define R2_PIN 4
+#define B1_PIN 1
+#define R2_PIN 6
 #define G2_PIN 5
-#define B2_PIN 6
+#define B2_PIN 4
 #define A_PIN 7
 #define B_PIN 8
 #define C_PIN 9
@@ -51,7 +51,7 @@ static const uint16_t BINARY_PAYLOAD_SIZE_RGB332_FULL = PANEL_RES_X * PANEL_RES_
 static const uint16_t BINARY_PAYLOAD_SIZE_MAX = BINARY_PAYLOAD_SIZE_RGB332_FULL;
 static const HUB75_I2S_CFG::clk_speed MATRIX_I2S_SPEED = HUB75_I2S_CFG::HZ_8M;
 static const bool MATRIX_CLKPHASE = true;
-static const uint8_t MATRIX_LAT_BLANKING = 4;
+static const uint8_t MATRIX_LAT_BLANKING = 6;
 static const uint8_t MATRIX_MIN_REFRESH_RATE = 120; // 适当降低最小刷新率以换取更好的显示质量
 static const uint8_t MATRIX_COLOR_DEPTH_BITS = 6;
 static const uint8_t MATRIX_PANEL_BRIGHTNESS = 90;
@@ -179,21 +179,21 @@ bool mapPoint(int x, int y, int &mappedX, int &mappedY) {
 
   if (dy < 26) {
     // Top 26 rows -> R1 (ly 0-25)
-    lx = x;
+    lx = x + 39; // 增加 39 像素偏移，解决 40/38 分割问题
     ly = dy;
   } else if (dy < 52) {
     // Middle 26 rows -> R2 (ly 26-51)
-    lx = x;
+    lx = x + 39; 
     ly = dy;
   } else {
-    // Bottom 26 rows (52-77) -> Folded into columns 78-116
-    // Split the 78 columns of the bottom 26 rows into two 39x26 blocks
+    // Bottom 26 rows (52-77) -> Folded into columns 0-38 (Logical 0-38)
+    // 物理 52-77 行折叠到逻辑宽度的前 39 列
     if (x < 39) {
-      lx = 78 + x;
-      ly = dy - 52; // Logical rows 0-25
+      lx = x;
+      ly = dy - 52; // 映射到 R1 的 0-25 行
     } else {
-      lx = 78 + (x - 39);
-      ly = (dy - 52) + 26; // Logical rows 26-51
+      lx = x - 39;
+      ly = (dy - 52) + 26; // 映射到 R2 的 26-51 行
     }
   }
 
@@ -547,6 +547,24 @@ void handleLine(const char *line, InputSource src) {
       (uint8_t)((b * 7 + 127) / 255)
     );
     sendLineToSource(src, String("PIXEL OK ") + x + " " + y + " " + r + " " + g + " " + b);
+    return;
+  }
+
+  // 直接操作逻辑缓冲区的调试命令
+  if (sscanf(line, "LPIXEL %d %d %d %d %d", &x, &y, &r, &g, &b) == 5) {
+    if (x < 0) x = 0; if (y < 0) y = 0;
+    if (x >= LOGICAL_WIDTH) x = LOGICAL_WIDTH - 1;
+    if (y >= LOGICAL_HEIGHT) y = LOGICAL_HEIGHT - 1;
+    
+    const uint8_t r8 = (uint8_t)((r * 7 + 127) / 255);
+    const uint8_t g8 = (uint8_t)((g * 7 + 127) / 255);
+    const uint8_t b8 = (uint8_t)((b * 7 + 127) / 255);
+    dma_display->drawPixel((uint8_t)x, (uint8_t)y, dma_display->color565(
+      (uint8_t)((r8 * 255 + 3) / 7), 
+      (uint8_t)((g8 * 255 + 3) / 7), 
+      (uint8_t)((b8 * 255 + 3) / 7)
+    ));
+    sendLineToSource(src, String("LPIXEL OK ") + x + " " + y);
     return;
   }
 

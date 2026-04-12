@@ -522,7 +522,7 @@ void MatrixPanel_I2S_DMA::clearFrameBuffer(bool _buff_id)
 		}
 		else if (m_cfg.line_decoder  == HUB75_I2S_CFG::SM5368) 
 		{
-			row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)] = 0x0000;
+			row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)] = BIT_B; // 默认全行开启消隐 (BIT_B = 1)
 		}
 		else
 		{
@@ -552,7 +552,7 @@ void MatrixPanel_I2S_DMA::clearFrameBuffer(bool _buff_id)
       }
       else if (m_cfg.line_decoder  == HUB75_I2S_CFG::SM5368) 
       {
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)] = 0x0000;
+        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)] = BIT_B; // 默认全行开启消隐
       }
       else
       {
@@ -581,19 +581,14 @@ void MatrixPanel_I2S_DMA::clearFrameBuffer(bool _buff_id)
     // row selection for SM5368 shift regs with ABC-only addressing. A is row clk, B is BK and C is row data
     if (m_cfg.line_decoder == HUB75_I2S_CFG::SM5368) 
     {
-      uint16_t c = (row_idx == 0) ? BIT_C : 0x0000;  // set row data (C) when row==0, then push through shift regs for all other rows
-      
-      // For RU5958: A is CLK, B is BK (Blanking/Latch), C is Data.
-      // We need to shift one bit per row.
-      x_pixel = fb->rowBits[row_idx]->width - 1;
-      
-      // 1. Data and BK (Blanking HIGH during transition)
-      // Pulse row clock earlier than HUB75 LAT (which happens at width-1)
-      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 4)] |= c | BIT_B;
-      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 3)] |= c | BIT_A | BIT_B; // Row Clock Pulse
-      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 2)] |= c | BIT_B;
-      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 1)] |= c | BIT_B;
-      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)]     |= c | BIT_B;
+         // 最终修复：将行时钟脉冲移动到行末，消除亮度不均并校正2行偏移
+         // 在第25行（最后一行）注入起始位，确保行地址在行扫描结束后才改变
+         uint16_t c = (row_idx == 25) ? BIT_C : 0x0000; 
+         uint16_t width = fb->rowBits[row_idx]->width;
+         
+         // 在行末的两个像素设置时钟脉冲，确保整行亮度均匀
+         row[ESP32_TX_FIFO_POSITION_ADJUST(width - 2)] |= c | BIT_B | BIT_A; // 时钟高电平
+         row[ESP32_TX_FIFO_POSITION_ADJUST(width - 1)] |= c | BIT_B;         // 时钟低电平
     } // end SM5368
 
     // let's set LAT/OE control bits for specific pixels in each colour_index subrows
@@ -627,6 +622,12 @@ void MatrixPanel_I2S_DMA::clearFrameBuffer(bool _buff_id)
         row[ESP32_TX_FIFO_POSITION_ADJUST(0 + _blank)] |= BIT_OE;                               // disable output
         row[ESP32_TX_FIFO_POSITION_ADJUST(fb->rowBits[row_idx]->width - 1)] |= BIT_OE;          // disable output
         row[ESP32_TX_FIFO_POSITION_ADJUST(fb->rowBits[row_idx]->width - _blank - 1)] |= BIT_OE; // (LAT pulse is (width-2) -1 pixel to compensate array index starting at 0
+
+        if (m_cfg.line_decoder == HUB75_I2S_CFG::SM5368) {
+           row[ESP32_TX_FIFO_POSITION_ADJUST(0 + _blank)] |= BIT_B;
+           row[ESP32_TX_FIFO_POSITION_ADJUST(fb->rowBits[row_idx]->width - 1)] |= BIT_B;
+           row[ESP32_TX_FIFO_POSITION_ADJUST(fb->rowBits[row_idx]->width - _blank - 1)] |= BIT_B;
+        }
 
       } while (_blank);
 
@@ -686,10 +687,16 @@ void MatrixPanel_I2S_DMA::setBrightnessOE(uint8_t brt, const int _buff_id)
         if (x_coord >= x_coord_min && x_coord < x_coord_max)
         {
           row[ESP32_TX_FIFO_POSITION_ADJUST(x_coord)] &= BITMASK_OE_CLEAR;
+          if (m_cfg.line_decoder == HUB75_I2S_CFG::SM5368) {
+            row[ESP32_TX_FIFO_POSITION_ADJUST(x_coord)] &= ~BIT_B;
+          }
         }
         else
         {
           row[ESP32_TX_FIFO_POSITION_ADJUST(x_coord)] |= BIT_OE; // Disable output after this point.
+          if (m_cfg.line_decoder == HUB75_I2S_CFG::SM5368) {
+            row[ESP32_TX_FIFO_POSITION_ADJUST(x_coord)] |= BIT_B;
+          }
         }
 
       } while (x_coord);
