@@ -579,35 +579,21 @@ void MatrixPanel_I2S_DMA::clearFrameBuffer(bool _buff_id)
     } // end SM5266P
 
     // row selection for SM5368 shift regs with ABC-only addressing. A is row clk, B is BK and C is row data
-    // For 78x78 panels with ICN2053 driver: panel is divided into 3 segments of 26 columns each
-    // Each segment needs its own row selection signals at the end of the segment
     if (m_cfg.line_decoder == HUB75_I2S_CFG::SM5368) 
     {
       uint16_t c = (row_idx == 0) ? BIT_C : 0x0000;  // set row data (C) when row==0, then push through shift regs for all other rows
       
-      // Check if this is a 78-wide panel that needs multiple segment row selection
-      if (fb->rowBits[row_idx]->width == 78) {
-        // 78x78 ICN2053 panel: need row selection at each segment boundary (26, 52, 78)
-        // Segment 1: pixels 0-25, row sel at pixel 25-26
-        // Segment 2: pixels 26-51, row sel at pixel 51-52  
-        // Segment 3: pixels 52-77, row sel at pixel 77-78
-        x_pixel = 25;  // end of first segment (0-indexed)
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)]     |= c | BIT_B;         // set row data for segment 1
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel + 1)] |= c | BIT_A | BIT_B; // set row clk and bk for segment 1
-        
-        x_pixel = 51;  // end of second segment
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)]     |= c | BIT_B;         // set row data for segment 2
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel + 1)] |= c | BIT_A | BIT_B; // set row clk and bk for segment 2
-        
-        x_pixel = 77;  // end of third segment (last pixel)
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 1)] |= c | BIT_B;         // set row data for segment 3
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)]     |= c | BIT_A | BIT_B; // set row clk and bk for segment 3
-      } else {
-        // Standard single segment panel
-        x_pixel = fb->rowBits[row_idx]->width - 1;  // last pixel
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 1)] |= c | BIT_B;         // set row data
-        row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)]     |= c | BIT_A | BIT_B; // set row clk and bk, carry row data
-      }
+      // For RU5958: A is CLK, B is BK (Blanking/Latch), C is Data.
+      // We need to shift one bit per row.
+      x_pixel = fb->rowBits[row_idx]->width - 1;
+      
+      // 1. Data and BK (Blanking HIGH during transition)
+      // Pulse row clock earlier than HUB75 LAT (which happens at width-1)
+      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 4)] |= c | BIT_B;
+      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 3)] |= c | BIT_A | BIT_B; // Row Clock Pulse
+      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 2)] |= c | BIT_B;
+      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel - 1)] |= c | BIT_B;
+      row[ESP32_TX_FIFO_POSITION_ADJUST(x_pixel)]     |= c | BIT_B;
     } // end SM5368
 
     // let's set LAT/OE control bits for specific pixels in each colour_index subrows

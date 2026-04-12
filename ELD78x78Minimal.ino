@@ -51,8 +51,8 @@ static const uint16_t BINARY_PAYLOAD_SIZE_RGB332_FULL = PANEL_RES_X * PANEL_RES_
 static const uint16_t BINARY_PAYLOAD_SIZE_MAX = BINARY_PAYLOAD_SIZE_RGB332_FULL;
 static const HUB75_I2S_CFG::clk_speed MATRIX_I2S_SPEED = HUB75_I2S_CFG::HZ_8M;
 static const bool MATRIX_CLKPHASE = true;
-static const uint8_t MATRIX_LAT_BLANKING = 1;
-static const uint8_t MATRIX_MIN_REFRESH_RATE = 180;
+static const uint8_t MATRIX_LAT_BLANKING = 4;
+static const uint8_t MATRIX_MIN_REFRESH_RATE = 120; // 适当降低最小刷新率以换取更好的显示质量
 static const uint8_t MATRIX_COLOR_DEPTH_BITS = 6;
 static const uint8_t MATRIX_PANEL_BRIGHTNESS = 90;
 static const char *BLE_DEVICE_NAME = "ESP32-LED-Panel";
@@ -460,13 +460,13 @@ bool processBinaryByte(BinaryParserContext &ctx, uint8_t byte, InputSource src) 
         sendLineToSource(src, "BIN ERR checksum");
       } else if (ctx.type == BINARY_FRAME_TYPE_MASK && ctx.len == BINARY_PAYLOAD_SIZE_MASK) {
         applyBinaryFrame(ctx.payload, ctx.len);
-        sendLineToSource(src, "BIN OK");
+        // sendLineToSource(src, "BIN OK"); // 减少反馈，避免阻塞
       } else if (ctx.type == BINARY_FRAME_TYPE_RGB332_ROW && ctx.len == BINARY_PAYLOAD_SIZE_RGB332_ROW) {
         applyBinaryRgb332RowFrame(ctx.payload, ctx.len);
-        sendLineToSource(src, "BIN OK");
+        // sendLineToSource(src, "BIN OK"); // 减少反馈
       } else if (ctx.type == BINARY_FRAME_TYPE_RGB332_FULL && ctx.len == BINARY_PAYLOAD_SIZE_RGB332_FULL) {
         applyBinaryRgb332FullFrame(ctx.payload, ctx.len);
-        sendLineToSource(src, "BIN OK");
+        sendLineToSource(src, "BIN OK"); // 仅全帧完成后反馈
       } else {
         sendLineToSource(src, "BIN ERR type");
       }
@@ -505,7 +505,7 @@ void sendLineToSource(InputSource src, const char *line) {
     bleTxCharacteristic->setValue(txChunk, chunk);
     bleTxCharacteristic->notify();
     offset += chunk;
-    delay(2);
+    delay(10); // 增加延迟，给 BLE 栈处理时间
   }
 }
 
@@ -690,7 +690,7 @@ void setupMatrix() {
   mxconfig.gpio.lat = LAT_PIN;
   mxconfig.gpio.oe  = OE_PIN;
   mxconfig.gpio.clk = CLK_PIN;
-  mxconfig.driver   = HUB75_I2S_CFG::ICN2038S; // Will trigger icn2053init
+  mxconfig.driver   = HUB75_I2S_CFG::SHIFTREG; 
   mxconfig.line_decoder = HUB75_I2S_CFG::SM5368;
 
   mxconfig.i2sspeed = MATRIX_I2S_SPEED;
