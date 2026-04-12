@@ -581,14 +581,14 @@ void MatrixPanel_I2S_DMA::clearFrameBuffer(bool _buff_id)
     // row selection for SM5368 shift regs with ABC-only addressing. A is row clk, B is BK and C is row data
     if (m_cfg.line_decoder == HUB75_I2S_CFG::SM5368) 
     {
-         // 最终修复：将行时钟脉冲移动到行末，消除亮度不均并校正2行偏移
-         // 在第25行（最后一行）注入起始位，确保行地址在行扫描结束后才改变
+         // 修正：尝试在第25行注入起始位，配合行末时钟脉冲
+         // 根据测试反馈调整，期望第0行能正确亮起（25是R1组最后一行，R2组开始前）
          uint16_t c = (row_idx == 25) ? BIT_C : 0x0000; 
          uint16_t width = fb->rowBits[row_idx]->width;
          
-         // 在行末的两个像素设置时钟脉冲，确保整行亮度均匀
-         row[ESP32_TX_FIFO_POSITION_ADJUST(width - 2)] |= c | BIT_B | BIT_A; // 时钟高电平
-         row[ESP32_TX_FIFO_POSITION_ADJUST(width - 1)] |= c | BIT_B;         // 时钟低电平
+         // 在行末的像素设置时钟脉冲，尝试提前2个像素以改善亮度均匀性
+         row[ESP32_TX_FIFO_POSITION_ADJUST(width - 4)] |= c | BIT_B | BIT_A; // 时钟高电平
+         row[ESP32_TX_FIFO_POSITION_ADJUST(width - 3)] |= c | BIT_B;         // 时钟低电平
     } // end SM5368
 
     // let's set LAT/OE control bits for specific pixels in each colour_index subrows
